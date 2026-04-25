@@ -1,0 +1,198 @@
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.serviceAccountName" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+  {{- with .Values.serviceAccount.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}-config
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+data:
+  config.json: |
+    {
+      "server": {
+        "listen_addr": "{{ .Values.config.server.listen_addr }}"
+      },
+      "jwt": {
+        "secret_key_env": "JWT_SECRET_KEY",
+        "header_key": "{{ .Values.config.jwt.header_key }}"
+      },
+      "whitelist": {{ toYaml .Values.config.whitelist | nindent 8 }},
+      "blocked_paths": {{ toYaml .Values.config.blocked_paths | nindent 6 }},
+      "rate_limits": {{ toYaml .Values.config.rate_limits | nindent 6 }}
+    }
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}-secret
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+type: Opaque
+stringData:
+  JWT_SECRET_KEY: {{ .Values.jwtSecretKey | default (randAlphaNum 64) }}
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels:
+      {{- include "jwt-antpath-forwardauth.selectorLabels" . | nindent 6 }}
+  template:
+    metadata:
+      {{- with .Values.podAnnotations }}
+      annotations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      labels:
+        {{- include "jwt-antpath-forwardauth.selectorLabels" . | nindent 8 }}
+    spec:
+      serviceAccountName: {{ include "jwt-antpath-forwardauth.serviceAccountName" . }}
+      securityContext:
+        {{- toYaml .Values.podSecurityContext | nindent 8 }}
+      containers:
+        - name: {{ .Chart.Name }}
+          securityContext:
+            {{- toYaml .Values.securityContext | nindent 12 }}
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag | default .Chart.AppVersion }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - name: http
+              containerPort: {{ .Values.service.targetPort }}
+              protocol: TCP
+          livenessProbe:
+            {{- toYaml .Values.livenessProbe | nindent 12 }}
+          readinessProbe:
+            {{- toYaml .Values.readinessProbe | nindent 12 }}
+          resources:
+            {{- toYaml .Values.resources | nindent 12 }}
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+              readOnly: true
+          env:
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: {{ include "jwt-antpath-forwardauth.fullname" . }}-secret
+                  key: JWT_SECRET_KEY
+      volumes:
+        - name: config
+          configMap:
+            name: {{ include "jwt-antpath-forwardauth.fullname" . }}-config
+      {{- with .Values.nodeSelector }}
+      nodeSelector:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations:
+        {{- toYaml . | nindent 8 }}
+      {{- end }}
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+  {{- with .Values.service.annotations }}
+  annotations:
+    {{- toYaml . | nindent 4 }}
+  {{- end }}
+spec:
+  type: {{ .Values.service.type }}
+  ports:
+    - port: {{ .Values.service.port }}
+      targetPort: {{ .Values.service.targetPort }}
+      protocol: TCP
+      name: http
+  selector:
+    {{- include "jwt-antpath-forwardauth.selectorLabels" . | nindent 4 }}
+---
+{{- if .Values.autoscaling.enabled }}
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  minReplicas: {{ .Values.autoscaling.minReplicas }}
+  maxReplicas: {{ .Values.autoscaling.maxReplicas }}
+  metrics:
+    {{- if .Values.autoscaling.targetCPUUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetCPUUtilizationPercentage }}
+    {{- end }}
+    {{- if .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    - type: Resource
+      resource:
+        name: memory
+        target:
+          type: Utilization
+          averageUtilization: {{ .Values.autoscaling.targetMemoryUtilizationPercentage }}
+    {{- end }}
+{{- end }}
+---
+{{- if .Values.podDisruptionBudget.enabled }}
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+spec:
+  minAvailable: {{ .Values.podDisruptionBudget.minAvailable }}
+  selector:
+    matchLabels:
+      {{- include "jwt-antpath-forwardauth.selectorLabels" . | nindent 6 }}
+{{- end }}
+---
+{{- if .Values.serviceMonitor.enabled }}
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: {{ include "jwt-antpath-forwardauth.fullname" . }}
+  labels:
+    {{- include "jwt-antpath-forwardauth.labels" . | nindent 4 }}
+    {{- with .Values.serviceMonitor.labels }}
+    {{- toYaml . | nindent 4 }}
+    {{- end }}
+spec:
+  selector:
+    matchLabels:
+      {{- include "jwt-antpath-forwardauth.selectorLabels" . | nindent 6 }}
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: {{ .Values.serviceMonitor.interval }}
+      scrapeTimeout: {{ .Values.serviceMonitor.scrapeTimeout }}
+{{- end }}

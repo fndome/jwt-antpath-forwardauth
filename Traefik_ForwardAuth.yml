@@ -1,0 +1,22 @@
+apiVersion: traefik.io/v1alpha1
+kind: Middleware
+metadata:
+  name: jwt-auth
+  namespace: gw
+  labels:
+    app: jwt-antpath-forwardauth
+spec:
+  forwardAuth:
+    # 指向我们在 K8S_Deploy.yml 中创建的 Service，端口为 80
+    address: "http://jwt-antpath-forwardauth-svc"
+    
+    # 鉴权请求头：Traefik 只转发这些 Header 给 Zig 网关
+    authRequestHeaders:
+      - "Authorization"       # 必须：JWT Token 在这里
+      - "X-Forwarded-For"     # 推荐：获取客户端真实 IP
+      - "X-Forwarded-Proto"   # 推荐：获取协议 (http/https)
+      
+    # 鉴权响应头：Zig 网关验签成功后，会返回这些 Header，Traefic 负责注入给后端业务
+    authResponseHeaders:
+      - "X-User-Id"           # 对应 Go 代码里的 "X-User-Id": userId
+      - "X-User-Types"        # 对应 Go 代码里的 "X-User-Types": types

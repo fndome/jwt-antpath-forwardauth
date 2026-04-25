@@ -1,0 +1,124 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: jwt-forwardauth-config
+  namespace: gw
+data:
+  config.json: |
+    {
+      "server": {
+        "listen_addr": "0.0.0.0:9090"
+      },
+      "jwt": {
+        "secret_key": "gaming-partner-secret-key",
+        "header_key": "Authorization"
+      },
+      "whitelist": [
+        "/health",
+        "/metrics"
+      ],
+      "blocked_paths": [
+        "/internal/**"
+      ],
+      "rate_limits": [
+        {
+          "path_pattern": "/*/public/**",
+          "qps": 3000,
+          "burst": 6000,
+          "window_seconds": 1
+        },
+        {
+          "path_pattern": "/**",
+          "qps": 100,
+          "burst": 200,
+          "window_seconds": 1
+        }
+      ]
+    }
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jwt-antpath-forwardauth
+  namespace: gw
+  labels:
+    app: jwt-antpath-forwardauth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jwt-antpath-forwardauth
+  template:
+    metadata:
+      labels:
+        app: jwt-antpath-forwardauth
+    spec:
+      # 安全上下文：非 Root 运行
+      securityContext:
+        runAsUser: 1000
+        runAsGroup: 1000
+        fsGroup: 1000
+      containers:
+        - name: jwt-antpath-forwardauth
+          image: jwt-antpath-forwardauth:latest # 替换为你的镜像地址
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 9090
+              name: http
+              protocol: TCP
+          env:
+            - name: CONFIG_PATH
+              value: "/app/config.json"
+          
+          # 挂载配置文件
+          volumeMounts:
+            - name: config-volume
+              mountPath: /app/config.json
+              subPath: config.json
+              readOnly: true
+
+          # 健康检查 (利用白名单 /health 接口)
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 2
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 2
+
+          # 资源限制 (Zig 程序通常极低，这里给充裕一点)
+          resources:
+            requests:
+              cpu: 50m
+              memory: 32Mi
+            limits:
+              cpu: 200m
+              memory: 128Mi
+
+      volumes:
+        - name: config-volume
+          configMap:
+            name: jwt-forwardauth-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jwt-antpath-forwardauth-svc
+  namespace: gw
+spec:
+  selector:
+    app: jwt-antpath-forwardauth
+  ports:
+    # 对外暴露 80 端口，转发到容器的 9090
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 9090
+  type: ClusterIP

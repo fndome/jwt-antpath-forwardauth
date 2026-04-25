@@ -1,0 +1,32 @@
+{
+  "server": {
+    "listen_addr": "0.0.0.0:9090",
+    "log_level": "err"
+  },
+  "jwt": {
+    "secret_key": "your-super-secure-secret-key-at-least-32-characters-long",
+    "header_key": "Authorization"
+  },
+  "whitelist": [
+    "/",
+    "/health",
+    "/*/public/**"
+  ],
+  "blocked_paths": [
+    "/internal/**"
+  ],
+  "rate_limits": [
+    {
+      "path_pattern": "/*/public/**",
+      "qps": 3000,
+      "burst": 6000,
+      "window_seconds": 1
+    },
+    {
+      "path_pattern": "/**",
+      "qps": 100,
+      "burst": 200,
+      "window_seconds": 1
+    }
+  ]
+}

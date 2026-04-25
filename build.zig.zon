@@ -1,0 +1,19 @@
+.{
+    .name = .jwt_antpath_forwardauth,
+    .version = "0.1.0",
+    .minimum_zig_version = "0.16.0",
+    .fingerprint = 0x23cfb046e01ffd34,
+    .dependencies = .{
+        .swas = .{
+            // .path = "../swas",
+            .url = "https://github.com/fndome/swas/archive/refs/tags/0.0.1.tar.gz",
+            .hash = "swas-0.0.1-ySXm1_prAQBX2GUcrQo3dvkPgW8dM3-4iS4ngb-9Xwxf",
+        },
+    },
+    .paths = .{
+        "build.zig",
+        "build.zig.zon",
+        "src",
+        "config.json",
+    },
+}

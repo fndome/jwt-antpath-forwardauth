@@ -1,0 +1,15 @@
+apiVersion: v2
+name: jwt-antpath-forwardauth
+description: JWT AntPath Forward Authentication Gateway for Traefik/Kubernetes
+type: application
+version: 0.1.0
+appVersion: "0.1.0"
+keywords:
+  - jwt
+  - authentication
+  - traefik
+  - forward-auth
+  - kubernetes
+maintainers:
+  - name: fndome
+    email: support@example.com
