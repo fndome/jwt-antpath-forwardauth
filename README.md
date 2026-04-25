@@ -153,7 +153,7 @@ spec:
 
 | 模式 | 匹配示例 | 说明 |
 |:---|:---|:---|
-| `/health` | `/health` | 精确匹配 |
+| `/healthz` | `/healthz` | 精确匹配 |
 | `/api/**` | `/api/v1/users`, `/api/a/b/c` | `**` 匹配零个或多个目录层级 |
 | `/api/*/public/**` | `/api/v1/public/callback` | `*` 匹配单个路径片段（不能跨 `/`） |
 | `/api/*/*/public/**` | `/api/v1/payment/public/...` | 多个 `*` 依次匹配独立片段 |
@@ -184,92 +184,6 @@ spec:
 - **工具而非框架**：不接管你的生命周期，不定义你的路由。它只做一件事：回答“这个请求能否通过”。
 - **计算税的最小化**：JWT 验签是安全链路必须支付的“过路费”。本服务用 Zig 将这笔税压至物理极限（纳秒级），不浪费业务 Pod 的算力。
 - **生产级健壮性**：完整的 `errdefer` 内存回滚、ET 模式部分写入重注册、对齐窗口防突发、优雅退出零 FD 泄漏。
-
----
-
-## 📦 Buffer Copy Flow
-
-`aio_server.zig` 基于 io_uring **Buffer Group** + **Fixed Files** + **零拷贝所有权转移**实现极致性能。以下是每次请求的完整 Buffer 生命周期。
-
-### 读路径（请求）
-
-```
-io_uring Buffer Group (1792个 64KB 预注册缓冲区)
-  │
-  ├─ [注册] server.init()
-  │   └─ provide_buffers() 将整个 slab 注册到内核
-  │
-  ├─ [读完成] io_uring 自动选 buffer，cqe.flags 编码 bid
-  │   └─ getReadBuf(bid) → &slab[bid * 64KB]，零拷贝取指针
-  │
-  ├─ [解析请求] 直接操作 buffer 内数据
-  │   ├─ path → 指针切片（无拷贝）
-  │   ├─ header 解析 → 指针切片（无拷贝）
-  │   └─ Connection 头 → 布尔值（无拷贝）
-  │
-  ├─ [Worker 分发] 需要异步处理时，dupe 两份数据
-  │   ├─ path.dupe()        ← 唯一一次读拷贝
-  │   └─ request_data.dupe() ← 唯一一次读拷贝
-  │   └─ markReplenish(bid) → buffer 归还 io_uring
-  │
-  └─ [Worker 线程]
-      ├─ 处理中间件 / Handler，ctx.body 由 Handler alloc
-      ├─ Task.path / Task.request_data → defer free
-      └─ ResponseTask.body = ctx.body (所有权转移，零拷贝)
-```
-
-### 写路径（响应）
-
-```
-Worker 线程                  I/O 线程                   内核
-  │                          │                          │
-  ├─ ResponseTask ──queue──→ ├─ respondZeroCopy()       │
-  │  .body (所有权)          │   ├─ headers → write_buf │
-  │                          │   │   (BufferPool 预分配) │
-  │                          │   ├─ conn.write_body =   │
-  │                          │   │   resp.body (零拷贝)  │
-  │                          │   └─ submitWrite()       │
-  │                          │       │                  │
-  │                          │       ├─ writev(         │
-  │                          │       │   iov[0]=headers │
-  │                          │       │   iov[1]=body    │
-  │                          │       │ ) ──────────────→│ 一次系统调用
-  │                          │       │                  │ 写 socket
-  │                          │   onWriteComplete()      │
-  │                          │   ├─ free(body)          │
-  │                          │   ├─ keep-alive? →       │
-  │                          │   │   submitRead()       │
-  │                          │   └─ close? → closeConn()│
-```
-
-### 写缓冲分配与归还
-
-```
-accept()
-  ├─ BufferPool.allocWriteBuf()
-  │   └─ 从 write_free 栈弹出一个 64KB buffer
-  │   └─ 写入 conn.response_buf
-  │
-closeConn()
-  └─ BufferPool.freeWriteBuf(conn.response_buf)
-      └─ 推回 write_free 栈，供下一个连接复用
-```
-
-### Zero-Copy 清单
-
-| 阶段 | 拷贝？ | 说明 |
-|:---|:---:|:---|
-| 读：内核 → 用户 | ❌ | io_uring 直接写入预注册 Buffer Group |
-| 解析：提取 path / header | ❌ | 指针切片，零分配 |
-| Worker 分发：path | ✅ 1次 | `dupe`，因为 buffer 要归还 io_uring |
-| Worker 分发：request_data | ✅ 1次 | `dupe`，同上 |
-| Handler 构造响应体 | ✅ 1次 | Handler 自己 `alloc` 出 `ctx.body` |
-| Worker → I/O 投递 | ❌ | `ResponseTask.body` 所有权转移，指针传递 |
-| 格式化响应头 | ❌ | 写入 `conn.response_buf`（预分配写缓冲） |
-| 写：用户 → 内核 | ❌ | `writev` 直接从 `response_buf` + `body` 发出 |
-| Body 释放 | ✅ 1次 | write 完成后 `allocator.free(body)` |
-
-**整个请求-响应周期中，每连接固定 2 次堆分配**（`path.dupe` + `request_data.dupe`），进入 async handler 后额外 1 次（`ctx.body`）。无序列化、无拼接、无中间缓冲。
 
 ---
 
