@@ -48,7 +48,7 @@ pub fn main(init: std.process.Init) MyErrors!void {
 
     var stats: app.Stats = .{};
 
-    const env_cfg = loadEnvConfig(init.environ_map, alloc);
+    const env_cfg = try loadEnvConfig(init.environ_map, alloc);
     defer {
         if (env_cfg.config_path) |p| alloc.free(p);
         if (env_cfg.secret_key) |s| alloc.free(s);
