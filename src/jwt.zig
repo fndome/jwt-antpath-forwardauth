@@ -64,9 +64,8 @@ pub fn verifyHmac(token: []const u8, secret: []const u8, allocator: Allocator, i
     var parsed = std.json.parseFromSlice(std.json.Value, allocator, pay, .{}) catch {
         return .{ .valid = false, .payload = null, .error_msg = "Invalid JSON payload" };
     };
-    errdefer parsed.deinit();
-
     if (parsed.value != .object) {
+        parsed.deinit();
         return .{ .valid = false, .payload = null, .error_msg = "JWT data incomplete" };
     }
 
@@ -76,18 +75,22 @@ pub fn verifyHmac(token: []const u8, secret: []const u8, allocator: Allocator, i
     // 检查 exp
     if (parsed.value.object.get("exp")) |v| {
         const exp = if (v == .integer) v.integer else null orelse {
+            parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Invalid exp field" };
         };
         if (now_sec > exp + JWT_CLOCK_SKEW_SECONDS) {
+            parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Token expired" };
         }
     }
 
     if (parsed.value.object.get("nbf")) |v| {
         const nbf = if (v == .integer) v.integer else null orelse {
+            parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Invalid nbf field" };
         };
         if (now_sec < nbf - JWT_CLOCK_SKEW_SECONDS) {
+            parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Token not yet valid" };
         }
     }
