@@ -20,10 +20,10 @@ const EnvConfig = struct {
     secret_key: ?[]const u8,
 };
 
-fn loadEnvConfig(env_map: *std.process.Environ.Map, allocator: Allocator) EnvConfig {
+fn loadEnvConfig(env_map: *std.process.Environ.Map, allocator: Allocator) !EnvConfig {
     return .{
-        .config_path = if (env_map.get("CONFIG_PATH")) |v| allocator.dupe(u8, v) catch null else null,
-        .secret_key = if (env_map.get("JWT_SECRET_KEY")) |v| allocator.dupe(u8, v) catch null else null,
+        .config_path = if (env_map.get("CONFIG_PATH")) |v| try allocator.dupe(u8, v) else null,
+        .secret_key = if (env_map.get("JWT_SECRET_KEY")) |v| try allocator.dupe(u8, v) else null,
     };
 }
 
