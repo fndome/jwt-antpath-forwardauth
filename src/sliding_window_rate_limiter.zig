@@ -69,7 +69,7 @@ const SlidingWindowLimiter = struct {
     }
 
     pub fn allowRequest(self: *SlidingWindowLimiter) bool {
-        const now_ms = (nowMs(self.io) catch return false); // 时间获取失败则拒绝（保守）
+        const now_ms = nowMs(self.io) catch return false; // 时间获取失败则拒绝（保守）
         const window_start = now_ms - self.window_ms;
 
         const idx_i64 = @mod(@divTrunc(now_ms, self.sub_window_ms), @as(i64, @intCast(self.sub_windows)));
@@ -120,7 +120,7 @@ pub const RateLimiter = struct {
         for (rules, 0..) |rule, i| {
             const path_rule = try PathRule.init(allocator, rule.path_pattern);
             const max_requests = if (rule.burst > 0) rule.burst else rule.qps;
-            limiters[i] = try SlidingWindowLimiter.init(allocator, path_rule, max_requests, rule.window_seconds, io);
+            limiters[i] = try SlidingWindowLimiter.init(allocator, path_rule, max_requests, @as(i64, rule.window_seconds), io);
             user_limit_cfg[i] = rule.user_qps;
             user_burst_cfg[i] = if (rule.user_burst > 0) rule.user_burst else rule.user_qps;
             user_states[i] = std.AutoHashMap(u64, UserState).init(allocator);
