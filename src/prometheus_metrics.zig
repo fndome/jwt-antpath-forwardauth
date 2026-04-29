@@ -1,3 +1,4 @@
+//Single Thread Only, No Concurrency Control, No Memory Reuse, No Performance Optimization
 const std = @import("std");
 
 pub const MetricType = enum { counter, gauge };

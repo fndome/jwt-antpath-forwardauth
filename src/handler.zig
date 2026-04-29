@@ -135,15 +135,18 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
 
 pub fn healthMiddleware(allocator: Allocator, ctx: *Context) anyerror!bool {
     _ = allocator;
-    _ = ctx;
+    try ctx.text(200, "OK");
     return true;
 }
 
 pub fn handleMetrics(allocator: Allocator, ctx: *Context) !void {
-    _ = allocator; // 避免未使用警告
-    const jwtContext = @as(*JwtContext, @ptrCast(@alignCast(ctx.app_ctx.?)));
+    _ = allocator;
 
-    try ctx.json(200, jwtContext.metrics.metrics);
+    const jwtContext = @as(*JwtContext, @ptrCast(@alignCast(ctx.app_ctx.?)));
+    var buf: [4096]u8 = undefined;
+    var writer = std.Io.Writer.fixed(buf[0..]);
+    try jwtContext.metrics.collect(&writer);
+    try ctx.text(200, buf[0..writer.end]);
 }
 
 // 辅助函数（同前，略作修改以使用 ctx 中的分配器）

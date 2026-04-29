@@ -20,7 +20,6 @@ pub const AsyncLogger = struct {
     buffer: RingBuffer(LogEntry, 1024),
     thread: Thread,
     shutdown: atomic.Value(bool),
-
     pub fn init() Self {
         return .{
             .buffer = RingBuffer(LogEntry, 1024).init(),

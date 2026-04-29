@@ -17,6 +17,9 @@ pub const MAX_HEADER_LENGTH: usize = 8192;
 pub const MAX_TOKEN_LENGTH: usize = 4096;
 pub const MIN_SECRET_KEY_LENGTH: usize = 32;
 
+pub const DEFAULT_LISTEN_ADDR = "0.0.0.0:9090";
+pub const DEFAULT_HEADER_KEY = "Authorization";
+
 pub const Stats align(64) = struct {
     total: u64 = 0,
     allowed: u64 = 0,
@@ -85,8 +88,8 @@ pub const FileConfig = struct {
     rate_limits: []RateLimitConfig = &.{},
     log_level: LogLevel = .err,
 
-    pub const ServerConfig = struct { listen_addr: []const u8 = "0.0.0.0:9090", log_level: LogLevel = .err };
-    pub const JwtConfig = struct { secret_key: []const u8 = "", header_key: []const u8 = "Authorization" };
+    pub const ServerConfig = struct { listen_addr: []const u8 = DEFAULT_LISTEN_ADDR, log_level: LogLevel = .err };
+    pub const JwtConfig = struct { secret_key: []const u8 = "", header_key: []const u8 = DEFAULT_HEADER_KEY };
 
     pub fn validate(self: *const FileConfig) MyErrors!void {
         if (self.jwt.secret_key.len == 0) return error.MissingSecretKey;
@@ -105,51 +108,6 @@ pub const FileConfig = struct {
         allocator.free(self.rate_limits);
     }
 
-    pub fn toAppConfig(self: *const FileConfig, allocator: Allocator) !AppConfig {
-        const listen_addr_dupe = try allocator.dupe(u8, self.server.listen_addr);
-        errdefer allocator.free(listen_addr_dupe);
-        const secret_key_dupe = try allocator.dupe(u8, self.jwt.secret_key);
-        errdefer allocator.free(secret_key_dupe);
-        const header_key_dupe = try allocator.dupe(u8, self.jwt.header_key);
-        errdefer allocator.free(header_key_dupe);
-
-        const whitelist_dupe = try dupeStrings(allocator, self.whitelist);
-        errdefer {
-            for (whitelist_dupe) |s| allocator.free(@constCast(s));
-            allocator.free(@constCast(whitelist_dupe));
-        }
-        const blocked_dupe = try dupeStrings(allocator, self.blocked_paths);
-        errdefer {
-            for (blocked_dupe) |s| allocator.free(@constCast(s));
-            allocator.free(@constCast(blocked_dupe));
-        }
-
-        var rules = std.ArrayList(RateLimitConfig).empty;
-        errdefer {
-            for (rules.items) |rule| allocator.free(@constCast(rule.path_pattern));
-            rules.deinit(allocator);
-        }
-        for (self.rate_limits) |rc| {
-            const pattern_dupe = try allocator.dupe(u8, rc.path_pattern);
-            try rules.append(allocator, RateLimitConfig{
-                .path_pattern = pattern_dupe,
-                .qps = rc.qps,
-                .burst = rc.burst,
-                .window_seconds = rc.window_seconds,
-                .user_qps = rc.user_qps,
-                .user_burst = rc.user_burst,
-            });
-        }
-        return AppConfig{
-            .listen_addr = listen_addr_dupe,
-            .secret_key = secret_key_dupe,
-            .header_key = header_key_dupe,
-            .log_level = self.server.log_level,
-            .whitelist = whitelist_dupe,
-            .blocked_paths = blocked_dupe,
-            .rate_limits = try rules.toOwnedSlice(allocator),
-        };
-    }
 };
 
 pub fn getPathFromRequest(buf: []const u8) ?[]const u8 {
@@ -166,7 +124,7 @@ pub fn getPathFromRequest(buf: []const u8) ?[]const u8 {
     return raw[0..q_pos];
 }
 
-pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !FileConfig {
+pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !AppConfig {
     const cwd = std.Io.Dir.cwd();
     const file = try cwd.openFile(global_io, config_path, .{ .mode = .read_only });
     defer file.close(global_io);
@@ -175,28 +133,31 @@ pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !FileCo
     const content = file_buf[0..n];
     var parsed = try std.json.parseFromSlice(FileConfig, allocator, content, .{ .ignore_unknown_fields = true });
     defer parsed.deinit();
-    var cfg = parsed.value;
-    cfg.server.listen_addr = try allocator.dupe(u8, cfg.server.listen_addr);
-    errdefer allocator.free(@constCast(cfg.server.listen_addr));
-    cfg.jwt.secret_key = try allocator.dupe(u8, cfg.jwt.secret_key);
-    errdefer allocator.free(@constCast(cfg.jwt.secret_key));
-    cfg.jwt.header_key = try allocator.dupe(u8, cfg.jwt.header_key);
-    errdefer allocator.free(@constCast(cfg.jwt.header_key));
-    cfg.whitelist = try dupeStrings(allocator, cfg.whitelist);
+    const fc = parsed.value;
+
+    const listen_addr = try allocator.dupe(u8, fc.server.listen_addr);
+    errdefer allocator.free(@constCast(listen_addr));
+    const secret_key = try allocator.dupe(u8, fc.jwt.secret_key);
+    errdefer allocator.free(@constCast(secret_key));
+    const header_key = try allocator.dupe(u8, fc.jwt.header_key);
+    errdefer allocator.free(@constCast(header_key));
+    const whitelist = try dupeStrings(allocator, fc.whitelist);
     errdefer {
-        for (cfg.whitelist) |s| allocator.free(@constCast(s));
-        allocator.free(cfg.whitelist);
+        for (whitelist) |s| allocator.free(@constCast(s));
+        allocator.free(@constCast(whitelist));
     }
-    cfg.blocked_paths = try dupeStrings(allocator, cfg.blocked_paths);
+    const blocked_paths = try dupeStrings(allocator, fc.blocked_paths);
     errdefer {
-        for (cfg.blocked_paths) |s| allocator.free(@constCast(s));
-        allocator.free(cfg.blocked_paths);
+        for (blocked_paths) |s| allocator.free(@constCast(s));
+        allocator.free(@constCast(blocked_paths));
     }
     var rate_list = std.ArrayList(RateLimitConfig).empty;
-    defer rate_list.deinit(allocator);
-    for (cfg.rate_limits) |rc| {
+    errdefer {
+        for (rate_list.items) |rule| allocator.free(@constCast(rule.path_pattern));
+        rate_list.deinit(allocator);
+    }
+    for (fc.rate_limits) |rc| {
         const pattern_dupe = try allocator.dupe(u8, rc.path_pattern);
-        errdefer allocator.free(@constCast(pattern_dupe));
         try rate_list.append(allocator, RateLimitConfig{
             .path_pattern = pattern_dupe,
             .qps = rc.qps,
@@ -206,8 +167,15 @@ pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !FileCo
             .user_burst = rc.user_burst,
         });
     }
-    cfg.rate_limits = try rate_list.toOwnedSlice(allocator);
-    return cfg;
+    return AppConfig{
+        .listen_addr = listen_addr,
+        .secret_key = secret_key,
+        .header_key = header_key,
+        .log_level = fc.server.log_level,
+        .whitelist = whitelist,
+        .blocked_paths = blocked_paths,
+        .rate_limits = try rate_list.toOwnedSlice(allocator),
+    };
 }
 
 fn dupeStrings(allocator: Allocator, list: []const []const u8) ![][]const u8 {

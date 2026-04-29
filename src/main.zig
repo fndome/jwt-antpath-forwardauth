@@ -15,32 +15,30 @@ const MyErrors = app.MyErrors;
 // 主函数与启动逻辑
 // ==========================================
 
-fn getEnvVal(allocator: Allocator, key: []const u8) ![]const u8 {
-    const key_z = try allocator.dupeZ(u8, key);
-    defer allocator.free(key_z);
-    const val = std.c.getenv(key_z) orelse return error.EnvironmentVariableMissing;
-    return try allocator.dupe(u8, std.mem.span(val));
+const EnvConfig = struct {
+    config_path: ?[]const u8,
+    secret_key: ?[]const u8,
+};
+
+fn loadEnvConfig(env_map: *std.process.Environ.Map, allocator: Allocator) EnvConfig {
+    return .{
+        .config_path = if (env_map.get("CONFIG_PATH")) |v| allocator.dupe(u8, v) catch null else null,
+        .secret_key = if (env_map.get("JWT_SECRET_KEY")) |v| allocator.dupe(u8, v) catch null else null,
+    };
 }
 
 pub fn main(init: std.process.Init) MyErrors!void {
     const builtin = @import("builtin");
     if (builtin.os.tag == .windows) return error.UnsupportedPlatform;
 
-    // var gpa = GeneralPurposeAllocator(.{}){};
-    // defer _ = gpa.deinit();
-    // const alloc = gpa.allocator();
-    // This is appropriate for anything that lives as long as the process.
     const alloc: std.mem.Allocator = init.arena.allocator();
 
-    // Accessing command line arguments:
     const args = try init.minimal.args.toSlice(alloc);
     for (args) |arg| {
-        std.log.info("arg: {s}", .{arg});
+        app.log(.info, "arg: {s}", .{arg});
     }
 
-    // In order to do I/O operations need an `Io` instance.
     const io_backend = init.io;
-
     app.initGlobalIo(io_backend);
 
     const async_logger = try alloc.create(AsyncLogger);
@@ -50,23 +48,30 @@ pub fn main(init: std.process.Init) MyErrors!void {
 
     var stats: app.Stats = .{};
 
-    const config_path = getEnvVal(alloc, "CONFIG_PATH") catch default: {
-        const default_path = try alloc.dupe(u8, "config.json");
-        break :default default_path;
-    };
-    defer alloc.free(config_path);
+    const env_cfg = loadEnvConfig(init.environ_map, alloc);
+    defer {
+        if (env_cfg.config_path) |p| alloc.free(p);
+        if (env_cfg.secret_key) |s| alloc.free(s);
+    }
 
-    const cfg = app.loadConfigFromFile(alloc, config_path) catch |e| {
-        app.log(.warn, "Load config failed ({s}), use env JWT_SECRET_KEY\n", .{@errorName(e)});
-        const secret_key = getEnvVal(alloc, "JWT_SECRET_KEY") catch |e2| {
-            app.log(.err, "No JWT_SECRET_KEY env set and no config.json: {s}\n", .{@errorName(e2)});
+    const config_path = env_cfg.config_path orelse "config.json";
+
+    const app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
+        cfg.validate() catch |err| {
+            app.log(.err, "Config validation failed: {s}\n", .{@errorName(err)});
+            return err;
+        };
+        break :blk cfg;
+    } else |_| blk: {
+        app.log(.warn, "Load config failed, use env JWT_SECRET_KEY\n", .{});
+        const secret_key = env_cfg.secret_key orelse {
+            app.log(.err, "No JWT_SECRET_KEY env set and no config.json\n", .{});
             return error.MissingSecretKey;
         };
-        defer alloc.free(secret_key);
         var default_cfg = app.AppConfig{
-            .listen_addr = try alloc.dupe(u8, "0.0.0.0:9090"),
+            .listen_addr = try alloc.dupe(u8, app.DEFAULT_LISTEN_ADDR),
             .secret_key = try alloc.dupe(u8, secret_key),
-            .header_key = try alloc.dupe(u8, "Authorization"),
+            .header_key = try alloc.dupe(u8, app.DEFAULT_HEADER_KEY),
             .whitelist = &.{},
             .blocked_paths = &.{},
             .rate_limits = &.{},
@@ -76,15 +81,8 @@ pub fn main(init: std.process.Init) MyErrors!void {
             app.log(.err, "Default config validation failed: {s}\n", .{@errorName(err)});
             return err;
         };
-        try startServer(alloc, default_cfg, &stats, async_logger);
-        return;
+        break :blk default_cfg;
     };
-    defer cfg.deinit(alloc);
-    cfg.validate() catch |err| {
-        app.log(.err, "Config validation failed: {s}\n", .{@errorName(err)});
-        return err;
-    };
-    const app_cfg = try cfg.toAppConfig(alloc);
     defer app_cfg.deinit(alloc);
     app.global_log_level = app_cfg.log_level;
     try startServer(alloc, app_cfg, &stats, async_logger);
