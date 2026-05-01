@@ -1,7 +1,8 @@
 {
   "server": {
     "listen_addr": "0.0.0.0:9090",
-    "log_level": "err"
+    "log_level": "err",
+    "io_cpu": 2
   },
   "jwt": {
     "secret_key": "your-super-secure-secret-key-at-least-32-characters-long",
@@ -20,6 +21,18 @@
       "path_pattern": "/*/public/**",
       "qps": 3000,
       "burst": 6000,
+      "window_seconds": 1
+    },
+    {
+      "path_pattern": "/im/**",
+      "qps": 500,
+      "burst": 1000,
+      "window_seconds": 1
+    },
+    {
+      "path_pattern": "/im-ws/**",
+      "qps": 2000,
+      "burst": 4000,
       "window_seconds": 1
     },
     {

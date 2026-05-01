@@ -1,3 +1,20 @@
+# =============================================================================
+# 部署说明
+# =============================================================================
+# 1. seccomp: 将 seccomp/io_uring-allowed.json 复制到所有 K8s 节点:
+#      scp seccomp/io_uring-allowed.json root@node:/var/lib/kubelet/seccomp/
+#
+# 2. CPU: swas 含 2 个线程——IO 线程 (io_uring 事件循环) 和 Worker 线程 (请求处理)。
+#    IO 线程通过 config.json 的 io_cpu 字段绑核（设为 2 即绑定 CPU 2）。
+#    Worker 线程不需要绑核——host 上几十个 pod × 1 worker，内核调度器自动分配空闲核。
+#    绑核目的：保证 IO 线程的延迟确定性，避免 CPU 迁移抖动。
+#
+# 3. 创建命名空间并部署:
+#      kubectl create namespace gw
+#      kubectl apply -f K8S_Deploy.yml
+# =============================================================================
+
+---
 apiVersion: v1
 kind: ConfigMap
 metadata:
@@ -7,7 +24,8 @@ data:
   config.json: |
     {
       "server": {
-        "listen_addr": "0.0.0.0:9090"
+        "listen_addr": "0.0.0.0:9090",
+        "io_cpu": 2
       },
       "jwt": {
         "secret_key": "gaming-partner-secret-key",
@@ -25,6 +43,18 @@ data:
           "path_pattern": "/*/public/**",
           "qps": 3000,
           "burst": 6000,
+          "window_seconds": 1
+        },
+        {
+          "path_pattern": "/im/**",
+          "qps": 500,
+          "burst": 1000,
+          "window_seconds": 1
+        },
+        {
+          "path_pattern": "/im-ws/**",
+          "qps": 2000,
+          "burst": 4000,
           "window_seconds": 1
         },
         {
@@ -53,15 +83,19 @@ spec:
       labels:
         app: jwt-antpath-forwardauth
     spec:
-      # 安全上下文：非 Root 运行
       securityContext:
         runAsUser: 1000
         runAsGroup: 1000
         fsGroup: 1000
+        seccompProfile:
+          type: Localhost
+          localhostProfile: seccomp/io_uring-allowed.json
       containers:
         - name: jwt-antpath-forwardauth
-          image: jwt-antpath-forwardauth:latest # 替换为你的镜像地址
+          image: jwt-antpath-forwardauth:latest
           imagePullPolicy: IfNotPresent
+          # IO 线程绑核由 config.json 中 server.io_cpu=2 控制（CPU 2）
+          # Worker 线程不绑核，host 上几十个 worker 由内核调度器自动分配
           ports:
             - containerPort: 9090
               name: http
@@ -69,15 +103,17 @@ spec:
           env:
             - name: CONFIG_PATH
               value: "/app/config.json"
-          
-          # 挂载配置文件
           volumeMounts:
             - name: config-volume
               mountPath: /app/config.json
               subPath: config.json
               readOnly: true
-
-          # 健康检查 (利用白名单 /health 接口)
+          securityContext:
+            allowPrivilegeEscalation: false
+            capabilities:
+              drop: ["ALL"]
+            readOnlyRootFilesystem: true
+            runAsNonRoot: true
           livenessProbe:
             httpGet:
               path: /health
@@ -92,16 +128,14 @@ spec:
             initialDelaySeconds: 2
             periodSeconds: 5
             timeoutSeconds: 2
-
-          # 资源限制 (Zig 程序通常极低，这里给充裕一点)
+          # Guaranteed QoS: limits == requests，节点启用 cpuManagerPolicy=static 时独占 CPU
           resources:
             requests:
-              cpu: 50m
-              memory: 32Mi
+              cpu: 1
+              memory: 64Mi
             limits:
-              cpu: 200m
-              memory: 128Mi
-
+              cpu: 1
+              memory: 64Mi
       volumes:
         - name: config-volume
           configMap:
@@ -116,7 +150,6 @@ spec:
   selector:
     app: jwt-antpath-forwardauth
   ports:
-    # 对外暴露 80 端口，转发到容器的 9090
     - name: http
       protocol: TCP
       port: 80

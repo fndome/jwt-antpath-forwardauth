@@ -196,6 +196,31 @@ spec:
 
 ---
 
+## K8s 部署
+
+### 注意：containerd 默认 seccomp 禁止 io_uring
+
+本项目依赖 swas（基于 io_uring），containerd 默认 seccomp 会拦截 `io_uring_setup`/`io_uring_enter`/`io_uring_register`。
+部署时必须使用自定义 seccomp profile 放行以上 syscall：
+
+**在所有 K8s 节点上放置 profile：**
+
+```bash
+scp seccomp/io_uring-allowed.json root@node:/var/lib/kubelet/seccomp/
+```
+
+**Pod 中引用：**
+
+```yaml
+spec:
+  securityContext:
+    seccompProfile:
+      type: Localhost
+      localhostProfile: seccomp/io_uring-allowed.json
+```
+
+完整部署参见 `K8S_Deploy.yml`。
+
 ## 📜 许可证
 
 本项目采用 [MIT License](LICENSE) 开源。欢迎在生产环境中使用。

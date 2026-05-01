@@ -157,6 +157,7 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     defer server.deinit();
 
     server.config(.max_path_length, app.MAX_PATH_LENGTH);
+    if (cfg.io_cpu) |cpu| server.config(.io_cpu, cpu);
     try router.registerRoutes(&server);
 
     // 运行服务器

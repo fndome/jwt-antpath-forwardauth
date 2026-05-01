@@ -58,6 +58,7 @@ pub const AppConfig = struct {
     secret_key: []const u8,
     header_key: []const u8,
     log_level: LogLevel = .err,
+    io_cpu: ?u6 = null,
     whitelist: []const []const u8,
     blocked_paths: []const []const u8,
     rate_limits: []const RateLimitConfig,
@@ -88,7 +89,11 @@ pub const FileConfig = struct {
     rate_limits: []RateLimitConfig = &.{},
     log_level: LogLevel = .err,
 
-    pub const ServerConfig = struct { listen_addr: []const u8 = DEFAULT_LISTEN_ADDR, log_level: LogLevel = .err };
+    pub const ServerConfig = struct {
+        listen_addr: []const u8 = DEFAULT_LISTEN_ADDR,
+        log_level: LogLevel = .err,
+        io_cpu: ?i32 = null,
+    };
     pub const JwtConfig = struct { secret_key: []const u8 = "", header_key: []const u8 = DEFAULT_HEADER_KEY };
 
     pub fn validate(self: *const FileConfig) MyErrors!void {
@@ -107,7 +112,6 @@ pub const FileConfig = struct {
         for (self.rate_limits) |rc| allocator.free(@constCast(rc.path_pattern));
         allocator.free(self.rate_limits);
     }
-
 };
 
 pub fn getPathFromRequest(buf: []const u8) ?[]const u8 {
@@ -172,6 +176,7 @@ pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !AppCon
         .secret_key = secret_key,
         .header_key = header_key,
         .log_level = fc.server.log_level,
+        .io_cpu = if (fc.server.io_cpu) |c| @intCast(c) else null,
         .whitelist = whitelist,
         .blocked_paths = blocked_paths,
         .rate_limits = try rate_list.toOwnedSlice(allocator),
