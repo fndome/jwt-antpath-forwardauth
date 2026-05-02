@@ -72,7 +72,8 @@ const SlidingWindowLimiter = struct {
         const now_ms = nowMs(self.io) catch return false; // 时间获取失败则拒绝（保守）
         const window_start = now_ms - self.window_ms;
 
-        const idx_i64 = @mod(@divTrunc(now_ms, self.sub_window_ms), @as(i64, @intCast(self.sub_windows)));
+        const ms = @max(0, now_ms);
+        const idx_i64 = @mod(@divTrunc(ms, self.sub_window_ms), @as(i64, @intCast(self.sub_windows)));
         const sub_idx = @as(usize, @intCast(idx_i64));
 
         if (self.timestamps[sub_idx] < window_start) {
@@ -182,11 +183,11 @@ pub const RateLimiter = struct {
         const user_max = if (user_burst > 0) user_burst else user_qps;
 
         const user_key = std.hash.Wyhash.hash(0, user_id);
-        const now_ms = nowMs(self.io) catch return .{ .allowed = true, .limit = user_max, .remaining = user_max };
+        const now_ms = nowMs(self.io) catch return .{ .allowed = false, .limit = user_max, .remaining = 0 };
         const map = &self.user_states[idx];
 
         const entry = map.getOrPut(user_key) catch {
-            return .{ .allowed = true, .limit = user_max, .remaining = user_max };
+            return .{ .allowed = false, .limit = user_max, .remaining = 0 };
         };
 
         if (!entry.found_existing) {

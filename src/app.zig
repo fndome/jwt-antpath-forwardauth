@@ -5,7 +5,7 @@ const RateLimitConfig = @import("sliding_window_rate_limiter.zig").RateLimitConf
 const AsyncLogger = @import("async_logger.zig").AsyncLogger;
 const LogLevel = @import("log_level.zig").LogLevel;
 
-pub const MyErrors = error{ UnsupportedAddressFamily, InvalidListenAddress, MissingSecretKey, UnsupportedPlatform, EnvVarMissing };
+pub const MyErrors = error{ UnsupportedAddressFamily, InvalidListenAddress, MissingSecretKey, UnsupportedPlatform, EnvVarMissing, InvalidHeaderKey };
 
 pub var global_io: std.Io = undefined;
 pub fn initGlobalIo(io: std.Io) void {
@@ -65,6 +65,7 @@ pub const AppConfig = struct {
 
     pub fn validate(self: *const AppConfig) MyErrors!void {
         if (self.secret_key.len < MIN_SECRET_KEY_LENGTH) log(.warn, "Secret key too short\n", .{});
+        if (self.header_key.len == 0) return error.InvalidHeaderKey;
         if (std.mem.indexOfScalar(u8, self.listen_addr, ':') == null) return error.InvalidListenAddress;
     }
 
@@ -162,6 +163,7 @@ pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !AppCon
     }
     for (fc.rate_limits) |rc| {
         const pattern_dupe = try allocator.dupe(u8, rc.path_pattern);
+        errdefer allocator.free(@constCast(pattern_dupe));
         try rate_list.append(allocator, RateLimitConfig{
             .path_pattern = pattern_dupe,
             .qps = rc.qps,

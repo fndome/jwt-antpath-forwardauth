@@ -20,24 +20,30 @@ pub const AsyncLogger = struct {
     buffer: RingBuffer(LogEntry, 1024),
     thread: Thread,
     shutdown: atomic.Value(bool),
+    started: bool,
+
     pub fn init() Self {
         return .{
             .buffer = RingBuffer(LogEntry, 1024).init(),
             .thread = undefined,
             .shutdown = atomic.Value(bool).init(false),
+            .started = false,
         };
     }
 
     pub fn start(self: *Self) !void {
         self.thread = try Thread.spawn(.{}, logThread, .{self});
+        self.started = true;
     }
 
     pub fn stop(self: *Self) void {
+        if (!self.started) return;
         self.shutdown.store(true, .release);
         self.thread.join();
     }
 
     pub fn log(self: *Self, level: LogLevel, msg: []const u8) void {
+        if (!self.started) return;
         var entry = LogEntry{
             .level = level,
             .message = undefined,

@@ -42,7 +42,10 @@ pub fn main(init: std.process.Init) MyErrors!void {
     app.initGlobalIo(io_backend);
 
     const async_logger = try alloc.create(AsyncLogger);
-    errdefer alloc.destroy(async_logger);
+    errdefer {
+        app.global_async_logger = null;
+        alloc.destroy(async_logger);
+    }
     async_logger.* = AsyncLogger.init();
     app.global_async_logger = async_logger;
 
@@ -59,6 +62,7 @@ pub fn main(init: std.process.Init) MyErrors!void {
     const app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
         cfg.validate() catch |err| {
             app.log(.err, "Config validation failed: {s}\n", .{@errorName(err)});
+            cfg.deinit(alloc);
             return err;
         };
         break :blk cfg;
@@ -79,6 +83,7 @@ pub fn main(init: std.process.Init) MyErrors!void {
         errdefer default_cfg.deinit(alloc);
         default_cfg.validate() catch |err| {
             app.log(.err, "Default config validation failed: {s}\n", .{@errorName(err)});
+            default_cfg.deinit(alloc);
             return err;
         };
         break :blk default_cfg;

@@ -186,7 +186,10 @@ fn extractToken(buf: []const u8, key: []const u8) ?[]const u8 {
     while (it.next()) |line| {
         if (std.ascii.startsWithIgnoreCase(line, key)) {
             const val = std.mem.trimLeft(u8, line[key.len..], " \t:");
-            const token = if (std.mem.startsWith(u8, val, "Bearer ")) val[7..] else val;
+            const token = if (std.ascii.startsWithIgnoreCase(val, "bearer "))
+                val["bearer ".len..]
+            else
+                val;
             if (token.len > app.MAX_TOKEN_LENGTH) return null;
             return token;
         }
@@ -201,22 +204,49 @@ fn buildClaimsHeaders(allocator: Allocator, payload: *const jwt.Payload) ![]cons
     if (json != .object) return try list.toOwnedSlice(allocator);
     const obj = json.object;
     for (obj.keys, obj.values) |key, value| {
+        // 过滤非法字符防止 header 注入
+        if (!isValidHeaderName(key)) continue;
         const header_value = switch (value) {
-            .string => |s| s,
+            .string => |s| sanitizeHeaderValue(allocator, s) catch continue,
             .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
             .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
             .bool => |b| if (b) "true" else "false",
             .null => "",
-            .array => |arr| if (arr.items.len > 0 and arr.items[0] == .string) arr.items[0].string else "",
+            .array => |arr| if (arr.items.len > 0 and arr.items[0] == .string)
+                sanitizeHeaderValue(allocator, arr.items[0].string) catch ""
+            else
+                "",
             .object => "",
         };
         defer {
-            if (value == .integer or value == .number) allocator.free(@constCast(header_value));
+            if (value == .integer or value == .number or value == .string or value == .array)
+                allocator.free(@constCast(header_value));
         }
+        try list.appendSlice(allocator, "X-JWT-");
         try list.appendSlice(allocator, key);
         try list.appendSlice(allocator, ": ");
         try list.appendSlice(allocator, header_value);
         try list.appendSlice(allocator, "\r\n");
     }
     return try list.toOwnedSlice(allocator);
+}
+
+fn isValidHeaderName(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| {
+        if (c == '\r' or c == '\n' or c == ':') return false;
+    }
+    return true;
+}
+
+fn sanitizeHeaderValue(allocator: Allocator, s: []const u8) ![]const u8 {
+    var buf = try allocator.alloc(u8, s.len);
+    var j: usize = 0;
+    for (s) |c| {
+        if (c != '\r' and c != '\n') {
+            buf[j] = c;
+            j += 1;
+        }
+    }
+    return buf[0..j];
 }

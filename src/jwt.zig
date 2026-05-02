@@ -78,7 +78,7 @@ pub fn verifyHmac(token: []const u8, secret: []const u8, allocator: Allocator, i
             parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Invalid exp field" };
         };
-        if (now_sec > exp + JWT_CLOCK_SKEW_SECONDS) {
+        if (now_sec > @max(0, exp) and now_sec - @max(0, exp) > JWT_CLOCK_SKEW_SECONDS) {
             parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Token expired" };
         }
@@ -89,7 +89,7 @@ pub fn verifyHmac(token: []const u8, secret: []const u8, allocator: Allocator, i
             parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Invalid nbf field" };
         };
-        if (now_sec < nbf - JWT_CLOCK_SKEW_SECONDS) {
+        if (nbf > @max(0, now_sec + JWT_CLOCK_SKEW_SECONDS)) {
             parsed.deinit();
             return .{ .valid = false, .payload = null, .error_msg = "Token not yet valid" };
         }

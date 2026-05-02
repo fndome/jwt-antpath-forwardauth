@@ -67,10 +67,29 @@ pub const PrometheusMetrics = struct {
     }
 
     fn makeKey(self: *PrometheusMetrics, name: []const u8, labels: ?[]const u8) ![]u8 {
+        const safe_name = if (std.mem.indexOfAny(u8, name, "{}")) |_| blk: {
+            var buf = try self.allocator.alloc(u8, name.len);
+            var j: usize = 0;
+            for (name) |c| {
+                if (c != '{' and c != '}') { buf[j] = c; j += 1; }
+            }
+            break :blk buf[0..j];
+        } else name;
+        defer if (safe_name.ptr != name.ptr) self.allocator.free(@constCast(safe_name));
+
         if (labels) |l| {
-            return try std.fmt.allocPrint(self.allocator, "{s}{{{s}}}", .{ name, l });
+            const safe_labels = if (std.mem.indexOfAny(u8, l, "{}")) |_| blk: {
+                var buf = try self.allocator.alloc(u8, l.len);
+                var j: usize = 0;
+                for (l) |c| {
+                    if (c != '{' and c != '}') { buf[j] = c; j += 1; }
+                }
+                break :blk buf[0..j];
+            } else l;
+            defer if (safe_labels.ptr != l.ptr) self.allocator.free(@constCast(safe_labels));
+            return try std.fmt.allocPrint(self.allocator, "{s}{{{s}}}", .{ safe_name, safe_labels });
         }
-        return try self.allocator.dupe(u8, name);
+        return try self.allocator.dupe(u8, safe_name);
     }
 
     pub fn collect(self: *PrometheusMetrics, writer: *std.Io.Writer) !void {
