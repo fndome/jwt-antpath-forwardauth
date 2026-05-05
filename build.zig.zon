@@ -4,10 +4,10 @@
     .minimum_zig_version = "0.16.0",
     .fingerprint = 0x23cfb046e01ffd34,
     .dependencies = .{
-        .swas = .{
-            // .path = "../swas",
-            .url = "https://github.com/fndome/swas/archive/refs/tags/0.2.0.tar.gz",
-            .hash = "swas-0.2.0-ySXm169eAgC7yxG8CKdp9OpE91vZN-HaV57zWXUQMAS-",
+        .sws = .{
+            // .path = "../sws",
+            .url = "https://github.com/fndome/sws/archive/refs/tags/0.2.0.tar.gz",
+            .hash = "sws-0.2.0-UG15Rv3yAwDlKjbPyv8wqMUTtvR-GCNIi7SPIDDErDyR",
         },
     },
     .paths = .{

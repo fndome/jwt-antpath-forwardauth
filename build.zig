@@ -4,14 +4,14 @@ pub fn build(b: *std.Build) void {
     const target = b.standardTargetOptions(.{});
     const optimize = b.standardOptimizeOption(.{});
 
-    const swas_dep = b.dependency("swas", .{ .target = target, .optimize = optimize });
+    const sws_dep = b.dependency("sws", .{ .target = target, .optimize = optimize });
 
     const module = b.createModule(.{
         .root_source_file = b.path("src/main.zig"),
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "swas", .module = swas_dep.module("swas") },
+            .{ .name = "sws", .module = sws_dep.module("sws") },
         },
     });
 
@@ -37,7 +37,7 @@ pub fn build(b: *std.Build) void {
         .target = target,
         .optimize = optimize,
         .imports = &.{
-            .{ .name = "swas", .module = swas_dep.module("swas") },
+            .{ .name = "sws", .module = sws_dep.module("sws") },
         },
     });
     const tests = b.addTest(.{

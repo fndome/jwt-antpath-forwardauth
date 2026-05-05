@@ -1,7 +1,7 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const swas = @import("swas");
+const sws = @import("sws");
 const RateLimiter = @import("sliding_window_rate_limiter.zig").RateLimiter;
 const PrometheusMetrics = @import("prometheus_metrics.zig").PrometheusMetrics;
 const AsyncLogger = @import("async_logger.zig").AsyncLogger;
@@ -100,12 +100,12 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     std.debug.print("🚀 JWT Gateway with io_uring on {s}\n", .{cfg.listen_addr});
 
     // 构建 whitelist 规则
-    var wl_list = std.ArrayList(swas.PathRule).empty;
+    var wl_list = std.ArrayList(sws.PathRule).empty;
     defer {
         for (wl_list.items) |*r| r.deinit();
         wl_list.deinit(alloc);
     }
-    for (cfg.whitelist) |p| try wl_list.append(alloc, try swas.PathRule.init(alloc, p));
+    for (cfg.whitelist) |p| try wl_list.append(alloc, try sws.PathRule.init(alloc, p));
     const wl_rules = try wl_list.toOwnedSlice(alloc);
     errdefer {
         for (wl_rules) |*r| r.deinit();
@@ -113,12 +113,12 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     }
 
     // 构建 blocked 规则
-    var bl_list = std.ArrayList(swas.PathRule).empty;
+    var bl_list = std.ArrayList(sws.PathRule).empty;
     defer {
         for (bl_list.items) |*r| r.deinit();
         bl_list.deinit(alloc);
     }
-    for (cfg.blocked_paths) |p| try bl_list.append(alloc, try swas.PathRule.init(alloc, p));
+    for (cfg.blocked_paths) |p| try bl_list.append(alloc, try sws.PathRule.init(alloc, p));
     const bl_rules = try bl_list.toOwnedSlice(alloc);
     errdefer {
         for (bl_rules) |*r| r.deinit();
@@ -158,7 +158,7 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     };
 
     // 创建异步服务器，传递上下文
-    var server = try swas.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx);
+    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx);
     defer server.deinit();
 
     server.config(.max_path_length, app.MAX_PATH_LENGTH);
