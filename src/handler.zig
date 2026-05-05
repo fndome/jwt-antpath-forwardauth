@@ -1,8 +1,8 @@
 const std = @import("std");
 const Allocator = std.mem.Allocator;
 
-const PathRule = @import("swas").PathRule;
-const Context = @import("swas").Context;
+const PathRule = @import("sws").PathRule;
+const Context = @import("sws").Context;
 const jwt = @import("jwt.zig");
 const app = @import("app.zig");
 const ratelimiter = @import("sliding_window_rate_limiter.zig");

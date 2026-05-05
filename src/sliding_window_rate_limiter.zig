@@ -1,5 +1,5 @@
 const std = @import("std");
-const PathRule = @import("swas").PathRule;
+const PathRule = @import("sws").PathRule;
 
 pub const RateLimitConfig = struct {
     path_pattern: []const u8,

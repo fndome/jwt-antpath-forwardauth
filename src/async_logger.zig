@@ -1,5 +1,5 @@
 const std = @import("std");
-const RingBuffer = @import("swas").RingBuffer;
+const RingBuffer = @import("sws").RingBuffer;
 const Thread = std.Thread;
 const atomic = std.atomic;
 
