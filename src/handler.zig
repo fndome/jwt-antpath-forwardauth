@@ -213,13 +213,13 @@ fn buildClaimsHeaders(allocator: Allocator, payload: *const jwt.Payload) ![]cons
             .bool => |b| if (b) "true" else "false",
             .null => "",
             .array => |arr| if (arr.items.len > 0 and arr.items[0] == .string)
-                sanitizeHeaderValue(allocator, arr.items[0].string) catch ""
+                sanitizeHeaderValue(allocator, arr.items[0].string) catch continue
             else
-                "",
+                continue,
             .object => "",
         };
         defer {
-            if (value == .integer or value == .number or value == .string or value == .array)
+            if (value == .integer or value == .number or value == .string)
                 allocator.free(@constCast(header_value));
         }
         try list.appendSlice(allocator, "X-JWT-");
