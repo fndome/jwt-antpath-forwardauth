@@ -1,0 +1,93 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: jwt-antpath-forwardauth
+  namespace: gw
+  labels:
+    app: jwt-antpath-forwardauth
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: jwt-antpath-forwardauth
+  template:
+    metadata:
+      labels:
+        app: jwt-antpath-forwardauth
+    spec:
+      securityContext:
+        seccompProfile:
+          type: Localhost
+          localhostProfile: seccomp/io_uring-allowed.json
+      containers:
+        - name: jwt-auth
+          image: fndome/jwt-antpath-forwardauth:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - name: http
+              containerPort: 9090
+              protocol: TCP
+          env:
+            - name: JWT_SECRET_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: jwt-antpath-forwardauth-secret
+                  key: JWT_SECRET_KEY
+          volumeMounts:
+            - name: config
+              mountPath: /app/config.json
+              subPath: config.json
+              readOnly: true
+          securityContext:
+            runAsNonRoot: true
+            runAsUser: 65532
+            runAsGroup: 65532
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 5
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 9090
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          resources:
+            requests:
+              cpu: 100m
+              memory: 64Mi
+            limits:
+              cpu: 500m
+              memory: 256Mi
+      volumes:
+        - name: config
+          configMap:
+            name: jwt-antpath-forwardauth-config
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: jwt-antpath-forwardauth-svc
+  namespace: gw
+  labels:
+    app: jwt-antpath-forwardauth
+spec:
+  type: ClusterIP
+  selector:
+    app: jwt-antpath-forwardauth
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 9090

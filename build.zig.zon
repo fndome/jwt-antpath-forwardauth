@@ -6,8 +6,8 @@
     .dependencies = .{
         .sws = .{
             // .path = "../sws",
-            .url = "https://github.com/fndome/sws/archive/refs/tags/0.2.0.tar.gz",
-            .hash = "sws-0.2.0-UG15Rv3yAwDlKjbPyv8wqMUTtvR-GCNIi7SPIDDErDyR",
+            .url = "https://github.com/fndome/sws/archive/refs/tags/0.3.0.tar.gz",
+            .hash = "sws-0.3.0-UG15RrT6BQBDWmKfhlZzVFgbryi6f4sdDqh4q4XsNmQ1",
         },
     },
     .paths = .{
