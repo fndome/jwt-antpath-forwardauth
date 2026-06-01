@@ -27,7 +27,7 @@ fn loadEnvConfig(env_map: *std.process.Environ.Map, allocator: Allocator) !EnvCo
     };
 }
 
-pub fn main(init: std.process.Init) MyErrors!void {
+pub fn main(init: std.process.Init) !void {
     const builtin = @import("builtin");
     if (builtin.os.tag == .windows) return error.UnsupportedPlatform;
 
@@ -59,10 +59,11 @@ pub fn main(init: std.process.Init) MyErrors!void {
 
     const config_path = env_cfg.config_path orelse "config.json";
 
-    const app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
+    var app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
         cfg.validate() catch |err| {
             app.log(.err, "Config validation failed: {s}\n", .{@errorName(err)});
-            cfg.deinit(alloc);
+            var mut_cfg = cfg;
+            mut_cfg.deinit(alloc);
             return err;
         };
         break :blk cfg;
@@ -93,7 +94,7 @@ pub fn main(init: std.process.Init) MyErrors!void {
     try startServer(alloc, app_cfg, &stats, async_logger);
 }
 
-fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_logger: *app.AsyncLogger) MyErrors!void {
+fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_logger: *app.AsyncLogger) !void {
     try async_logger.start();
     defer async_logger.stop();
 
@@ -158,7 +159,7 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     };
 
     // 创建异步服务器，传递上下文
-    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx);
+    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx, 64, null);
     defer server.deinit();
 
     server.config(.max_path_length, app.MAX_PATH_LENGTH);

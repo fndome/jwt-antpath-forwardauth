@@ -2,10 +2,10 @@ const std = @import("std");
 const Allocator = std.mem.Allocator;
 
 const RateLimitConfig = @import("sliding_window_rate_limiter.zig").RateLimitConfig;
-const AsyncLogger = @import("async_logger.zig").AsyncLogger;
+pub const AsyncLogger = @import("async_logger.zig").AsyncLogger;
 const LogLevel = @import("log_level.zig").LogLevel;
 
-pub const MyErrors = error{ UnsupportedAddressFamily, InvalidListenAddress, MissingSecretKey, UnsupportedPlatform, EnvVarMissing, InvalidHeaderKey };
+pub const MyErrors = error{ UnsupportedAddressFamily, InvalidListenAddress, MissingSecretKey, UnsupportedPlatform, EnvVarMissing, InvalidHeaderKey, OutOfMemory, Unexpected, SystemResources, ThreadQuotaExceeded, LockedMemoryLimitExceeded, WindowTooSmall };
 
 pub var global_io: std.Io = undefined;
 pub fn initGlobalIo(io: std.Io) void {
@@ -20,7 +20,7 @@ pub const MIN_SECRET_KEY_LENGTH: usize = 32;
 pub const DEFAULT_LISTEN_ADDR = "0.0.0.0:9090";
 pub const DEFAULT_HEADER_KEY = "Authorization";
 
-pub const Stats align(64) = struct {
+pub const Stats = struct {
     total: u64 = 0,
     allowed: u64 = 0,
     blocked: u64 = 0,
@@ -35,8 +35,7 @@ pub fn log(level: LogLevel, comptime format: []const u8, args: anytype) void {
     if (@intFromEnum(level) >= @intFromEnum(global_log_level)) {
         if (global_async_logger) |logger| {
             var buf: [256]u8 = undefined;
-            const len = std.fmt.bufPrint(&buf, format, args) catch return;
-            logger.log(level, buf[0..len]);
+            logger.log(level, std.fmt.bufPrint(&buf, format, args) catch return);
         } else {
             const prefix = switch (level) {
                 .debug => "DEBUG",

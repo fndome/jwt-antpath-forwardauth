@@ -1,0 +1,12 @@
+FROM alpine:3.19
+RUN apk add --no-cache ca-certificates tzdata
+
+WORKDIR /app
+COPY zig-out/bin/jwt-antpath-forwardauth .
+COPY config.json .
+
+RUN addgroup -S appgroup && adduser -S appuser -G appgroup
+USER appuser
+
+EXPOSE 9090
+ENTRYPOINT ["./jwt-antpath-forwardauth"]

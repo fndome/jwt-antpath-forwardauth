@@ -12,7 +12,7 @@ const metrics = @import("prometheus_metrics.zig");
 // 业务上下文 JwtContext
 // ==========================================
 
-const JwtContext = struct {
+pub const JwtContext = struct {
     allocator: Allocator,
     config: app.AppConfig,
     stats: *app.Stats,
@@ -169,8 +169,8 @@ fn extractHeader(buf: []const u8, key: []const u8) ?[]const u8 {
     while (it.next()) |line| {
         if (std.ascii.startsWithIgnoreCase(line, key)) {
             const val_start = line[key.len..];
-            const val = std.mem.trimLeft(u8, val_start, " \t:");
-            return std.mem.trimRight(u8, val, " \t\r");
+            const val = std.mem.trimStart(u8, val_start, " \t:");
+            return std.mem.trimEnd(u8, val, " \t\r");
         }
     }
     return null;
@@ -185,7 +185,7 @@ fn extractToken(buf: []const u8, key: []const u8) ?[]const u8 {
     var it = std.mem.splitSequence(u8, buf, "\r\n");
     while (it.next()) |line| {
         if (std.ascii.startsWithIgnoreCase(line, key)) {
-            const val = std.mem.trimLeft(u8, line[key.len..], " \t:");
+            const val = std.mem.trimStart(u8, line[key.len..], " \t:");
             const token = if (std.ascii.startsWithIgnoreCase(val, "bearer "))
                 val["bearer ".len..]
             else
@@ -203,13 +203,17 @@ fn buildClaimsHeaders(allocator: Allocator, payload: *const jwt.Payload) ![]cons
     const json = payload.parsed.value;
     if (json != .object) return try list.toOwnedSlice(allocator);
     const obj = json.object;
-    for (obj.keys, obj.values) |key, value| {
+    var it = obj.iterator();
+    while (it.next()) |entry| {
+        const key = entry.key_ptr.*;
+        const value = entry.value_ptr.*;
         // 过滤非法字符防止 header 注入
         if (!isValidHeaderName(key)) continue;
         const header_value = switch (value) {
             .string => |s| sanitizeHeaderValue(allocator, s) catch continue,
             .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
-            .number => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+            .float => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+            .number_string => |ns| try allocator.dupe(u8, ns),
             .bool => |b| if (b) "true" else "false",
             .null => "",
             .array => |arr| if (arr.items.len > 0 and arr.items[0] == .string)
@@ -219,10 +223,9 @@ fn buildClaimsHeaders(allocator: Allocator, payload: *const jwt.Payload) ![]cons
             .object => "",
         };
         defer {
-            if (value == .integer or value == .number or value == .string)
+            if (value == .integer or value == .float or value == .string or value == .number_string)
                 allocator.free(@constCast(header_value));
         }
-        try list.appendSlice(allocator, "X-JWT-");
         try list.appendSlice(allocator, key);
         try list.appendSlice(allocator, ": ");
         try list.appendSlice(allocator, header_value);
