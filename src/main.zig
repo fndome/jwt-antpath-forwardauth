@@ -159,7 +159,7 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     };
 
     // 创建异步服务器，传递上下文
-    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx, 64, null);
+    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx, 64, null, .{ .max_connections = 10_000, .buffer_pool_size = 4096 });
     defer server.deinit();
 
     server.config(.max_path_length, app.MAX_PATH_LENGTH);
