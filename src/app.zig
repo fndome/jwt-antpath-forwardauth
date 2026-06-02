@@ -58,6 +58,7 @@ pub const AppConfig = struct {
     header_key: []const u8,
     log_level: LogLevel = .err,
     io_cpu: ?u6 = null,
+    large_pool_capacity: u32 = 0,
     whitelist: []const []const u8,
     blocked_paths: []const []const u8,
     rate_limits: []const RateLimitConfig,
@@ -93,6 +94,7 @@ pub const FileConfig = struct {
         listen_addr: []const u8 = DEFAULT_LISTEN_ADDR,
         log_level: LogLevel = .err,
         io_cpu: ?i32 = null,
+        large_pool_capacity: u32 = 0,
     };
     pub const JwtConfig = struct { secret_key: []const u8 = "", header_key: []const u8 = DEFAULT_HEADER_KEY };
 
@@ -178,6 +180,7 @@ pub fn loadConfigFromFile(allocator: Allocator, config_path: []const u8) !AppCon
         .header_key = header_key,
         .log_level = fc.server.log_level,
         .io_cpu = if (fc.server.io_cpu) |c| @intCast(c) else null,
+        .large_pool_capacity = fc.server.large_pool_capacity,
         .whitelist = whitelist,
         .blocked_paths = blocked_paths,
         .rate_limits = try rate_list.toOwnedSlice(allocator),
