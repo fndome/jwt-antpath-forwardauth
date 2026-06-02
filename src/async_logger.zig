@@ -66,7 +66,7 @@ pub const AsyncLogger = struct {
                 };
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
-            Thread.yield() catch {};
+            std.time.sleep(10 * std.time.ns_per_ms);
         }
 
         // 退出前处理剩余日志
