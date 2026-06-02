@@ -2,8 +2,8 @@ const std = @import("std");
 const RingBuffer = @import("sws").RingBuffer;
 const Thread = std.Thread;
 const atomic = std.atomic;
+const linux = std.os.linux;
 
-// 复用 log_level.zig 中的 LogLevel 定义
 const LogLevel = @import("log_level.zig").LogLevel;
 
 const LOG_MSG_SIZE: usize = 256;
@@ -21,13 +21,16 @@ pub const AsyncLogger = struct {
     thread: Thread,
     shutdown: atomic.Value(bool),
     started: bool,
+    eventfd: i32,
 
     pub fn init() Self {
+        const efd_raw = linux.eventfd(0, 0);
         return .{
             .buffer = RingBuffer(LogEntry, 1024).init(),
             .thread = undefined,
             .shutdown = atomic.Value(bool).init(false),
             .started = false,
+            .eventfd = @intCast(efd_raw),
         };
     }
 
@@ -39,7 +42,10 @@ pub const AsyncLogger = struct {
     pub fn stop(self: *Self) void {
         if (!self.started) return;
         self.shutdown.store(true, .release);
+        const val: u64 = 1;
+        _ = linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
         self.thread.join();
+        _ = linux.close(self.eventfd);
     }
 
     pub fn log(self: *Self, level: LogLevel, msg: []const u8) void {
@@ -52,10 +58,15 @@ pub const AsyncLogger = struct {
         const copy_len = @min(msg.len, LOG_MSG_SIZE);
         @memcpy(entry.message[0..copy_len], msg[0..copy_len]);
         entry.len = copy_len;
-        _ = self.buffer.tryPush(entry); // 队列满时丢弃日志（可接受）
+        _ = self.buffer.tryPush(entry);
+        const val: u64 = 1;
+        _ = linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
     }
 
     fn logThread(self: *Self) void {
+        var pfds: [1]linux.pollfd = undefined;
+        pfds[0] = .{ .fd = self.eventfd, .events = linux.POLL.IN, .revents = 0 };
+
         while (!self.shutdown.load(.acquire)) {
             while (self.buffer.tryPop()) |entry| {
                 const level_str = switch (entry.level) {
@@ -66,11 +77,13 @@ pub const AsyncLogger = struct {
                 };
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
-            const ts: std.os.linux.timespec = .{ .sec = 0, .nsec = 10 * std.time.ns_per_ms };
-            _ = std.os.linux.nanosleep(&ts, null);
+            _ = linux.poll(&pfds, pfds.len, -1);
+            if (pfds[0].revents & linux.POLL.IN != 0) {
+                var val: u64 = 0;
+                _ = linux.read(self.eventfd, @as([*]u8, @ptrCast(&val)), @sizeOf(u64));
+            }
         }
 
-        // 退出前处理剩余日志
         while (self.buffer.tryPop()) |entry| {
             const level_str = switch (entry.level) {
                 .debug => "DEBUG",
