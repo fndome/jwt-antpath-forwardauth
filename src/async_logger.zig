@@ -66,7 +66,8 @@ pub const AsyncLogger = struct {
                 };
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
-            std.time.sleep(10 * std.time.ns_per_ms);
+            const ts: std.os.linux.timespec = .{ .sec = 0, .nsec = 10 * std.time.ns_per_ms };
+            _ = std.os.linux.nanosleep(&ts, null);
         }
 
         // 退出前处理剩余日志
