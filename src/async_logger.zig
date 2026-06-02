@@ -24,7 +24,7 @@ pub const AsyncLogger = struct {
     eventfd: i32,
 
     pub fn init() Self {
-        const efd_raw = linux.eventfd(0, 0);
+        const efd_raw = linux.eventfd(0, linux.EFD.NONBLOCK);
         return .{
             .buffer = RingBuffer(LogEntry, 1024).init(),
             .thread = undefined,
@@ -77,8 +77,8 @@ pub const AsyncLogger = struct {
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
             pfds[0] = .{ .fd = self.eventfd, .events = linux.POLL.IN, .revents = 0 };
-            _ = linux.poll(&pfds, pfds.len, -1);
-            if ((pfds[0].revents & linux.POLL.IN) != 0) {
+            const ret = linux.poll(&pfds, pfds.len, 1);
+            if (@as(isize, @bitCast(ret)) > 0 and (pfds[0].revents & linux.POLL.IN) != 0) {
                 var val: u64 = 0;
                 _ = linux.read(self.eventfd, @as([*]u8, @ptrCast(&val)), @sizeOf(u64));
             }
