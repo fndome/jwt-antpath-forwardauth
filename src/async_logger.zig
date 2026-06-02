@@ -21,16 +21,13 @@ pub const AsyncLogger = struct {
     thread: Thread,
     shutdown: atomic.Value(bool),
     started: bool,
-    eventfd: i32,
 
     pub fn init() Self {
-        const efd_raw = linux.eventfd(0, linux.EFD.NONBLOCK);
         return .{
             .buffer = RingBuffer(LogEntry, 1024).init(),
             .thread = undefined,
             .shutdown = atomic.Value(bool).init(false),
             .started = false,
-            .eventfd = @intCast(efd_raw),
         };
     }
 
@@ -42,10 +39,7 @@ pub const AsyncLogger = struct {
     pub fn stop(self: *Self) void {
         if (!self.started) return;
         self.shutdown.store(true, .release);
-        const val: u64 = 1;
-        _ = linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
         self.thread.join();
-        _ = linux.close(self.eventfd);
     }
 
     pub fn log(self: *Self, level: LogLevel, msg: []const u8) void {
@@ -59,15 +53,13 @@ pub const AsyncLogger = struct {
         @memcpy(entry.message[0..copy_len], msg[0..copy_len]);
         entry.len = copy_len;
         _ = self.buffer.tryPush(entry);
-        const val: u64 = 1;
-        _ = linux.write(self.eventfd, @as([*]const u8, @ptrCast(&val)), @sizeOf(u64));
     }
 
     fn logThread(self: *Self) void {
-        var pfds: [1]linux.pollfd = undefined;
-
         while (!self.shutdown.load(.acquire)) {
+            var drained = false;
             while (self.buffer.tryPop()) |entry| {
+                drained = true;
                 const level_str = switch (entry.level) {
                     .debug => "DEBUG",
                     .info => "INFO",
@@ -76,11 +68,9 @@ pub const AsyncLogger = struct {
                 };
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
-            pfds[0] = .{ .fd = self.eventfd, .events = linux.POLL.IN, .revents = 0 };
-            const ret = linux.poll(&pfds, pfds.len, 1);
-            if (@as(isize, @bitCast(ret)) > 0 and (pfds[0].revents & linux.POLL.IN) != 0) {
-                var val: u64 = 0;
-                _ = linux.read(self.eventfd, @as([*]u8, @ptrCast(&val)), @sizeOf(u64));
+            if (!drained) {
+                const ts: linux.timespec = .{ .sec = 0, .nsec = std.time.ns_per_ms };
+                _ = linux.nanosleep(&ts, null);
             }
         }
 
@@ -101,14 +91,12 @@ test "async logger basic" {
     try logger.start();
     logger.log(LogLevel.info, "test message");
     logger.log(LogLevel.err, "error message");
-    // stop() 会等待线程结束并处理所有剩余日志，无需额外 sleep
     logger.stop();
 }
 
 test "async logger queue overflow" {
     var logger = AsyncLogger.init();
     try logger.start();
-    // 发送比缓冲区容量更多的消息（缓冲区大小 1024）
     var i: usize = 0;
     while (i < 2000) : (i += 1) {
         logger.log(LogLevel.info, "message");
