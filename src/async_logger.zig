@@ -65,7 +65,6 @@ pub const AsyncLogger = struct {
 
     fn logThread(self: *Self) void {
         var pfds: [1]linux.pollfd = undefined;
-        pfds[0] = .{ .fd = self.eventfd, .events = linux.POLL.IN, .revents = 0 };
 
         while (!self.shutdown.load(.acquire)) {
             while (self.buffer.tryPop()) |entry| {
@@ -77,8 +76,9 @@ pub const AsyncLogger = struct {
                 };
                 std.debug.print("[{s}] {s}\n", .{ level_str, entry.message[0..entry.len] });
             }
+            pfds[0] = .{ .fd = self.eventfd, .events = linux.POLL.IN, .revents = 0 };
             _ = linux.poll(&pfds, pfds.len, -1);
-            if (pfds[0].revents & linux.POLL.IN != 0) {
+            if ((pfds[0].revents & linux.POLL.IN) != 0) {
                 var val: u64 = 0;
                 _ = linux.read(self.eventfd, @as([*]u8, @ptrCast(&val)), @sizeOf(u64));
             }
