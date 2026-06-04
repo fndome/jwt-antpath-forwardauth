@@ -47,6 +47,8 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.stats.total += 1;
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
 
+    const req_end = std.mem.indexOf(u8, content, "\r\n") orelse std.mem.indexOfScalar(u8, content, '\n') orelse content.len;
+    app.log(.err, "auth req={s}\n", .{content[0..@min(req_end, @as(usize, 200))]});
     app.log(.err, "auth path={s}\n", .{path});
 
     if (matchesAny(path, srv_ctx.bl_rules)) {
