@@ -47,6 +47,8 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.stats.total += 1;
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
 
+    app.log(.err, "auth path={s}\n", .{path});
+
     if (matchesAny(path, srv_ctx.bl_rules)) {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
@@ -63,6 +65,7 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     const token = extractToken(content, srv_ctx.config.header_key) orelse {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
+        app.log(.err, "auth 401 no-token path={s}\n", .{path});
         try c.text(401, "Unauthorized");
         return true;
     };
