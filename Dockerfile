@@ -24,7 +24,7 @@ RUN apk add --no-cache ca-certificates tzdata
 WORKDIR /app
 # 仅复制编译产物，不携带源码和构建缓存
 COPY --from=builder /build/zig-out/bin/jwt-antpath-forwardauth .
-COPY config.json .
+COPY config-gw.json .
 
 # 安全加固：非 root 运行
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup

@@ -57,7 +57,7 @@ pub fn main(init: std.process.Init) !void {
         if (env_cfg.secret_key) |s| alloc.free(s);
     }
 
-    const config_path = env_cfg.config_path orelse "config.json";
+    const config_path = env_cfg.config_path orelse "config-gw.json";
 
     var app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
         cfg.validate() catch |err| {
