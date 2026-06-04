@@ -9,16 +9,16 @@
     "header_key": "Authorization"
   },
   "whitelist": [
-    "/",
-    "/health",
-    "/*/public/**"
+    "/healthz",
+    "/metrics",
+    "/*/*/public/**"
   ],
   "blocked_paths": [
     "/internal/**"
   ],
   "rate_limits": [
     {
-      "path_pattern": "/*/public/**",
+      "path_pattern": "/*/*/public/**",
       "qps": 3000,
       "burst": 6000,
       "window_seconds": 1
