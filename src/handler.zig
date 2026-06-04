@@ -139,7 +139,7 @@ pub fn healthMiddleware(allocator: Allocator, ctx: *Context) anyerror!bool {
     return true;
 }
 
-pub fn handleMetrics(allocator: Allocator, ctx: *Context) !void {
+pub fn handleMetrics(allocator: Allocator, ctx: *Context) anyerror!bool {
     _ = allocator;
 
     const jwtContext = @as(*JwtContext, @ptrCast(@alignCast(ctx.app_ctx.?)));
@@ -147,6 +147,7 @@ pub fn handleMetrics(allocator: Allocator, ctx: *Context) !void {
     var writer = std.Io.Writer.fixed(buf[0..]);
     try jwtContext.metrics.collect(&writer);
     try ctx.text(200, buf[0..writer.end]);
+    return true;
 }
 
 // 辅助函数（同前，略作修改以使用 ctx 中的分配器）
