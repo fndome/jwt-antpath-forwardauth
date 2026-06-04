@@ -18,12 +18,14 @@ const MyErrors = app.MyErrors;
 const EnvConfig = struct {
     config_path: ?[]const u8,
     secret_key: ?[]const u8,
+    k8s_namespace: ?[]const u8,
 };
 
 fn loadEnvConfig(env_map: *std.process.Environ.Map, allocator: Allocator) !EnvConfig {
     return .{
         .config_path = if (env_map.get("CONFIG_PATH")) |v| try allocator.dupe(u8, v) else null,
         .secret_key = if (env_map.get("JWT_SECRET_KEY")) |v| try allocator.dupe(u8, v) else null,
+        .k8s_namespace = if (env_map.get("K8S_NAMESPACE")) |v| try allocator.dupe(u8, v) else null,
     };
 }
 
@@ -55,9 +57,15 @@ pub fn main(init: std.process.Init) !void {
     defer {
         if (env_cfg.config_path) |p| alloc.free(p);
         if (env_cfg.secret_key) |s| alloc.free(s);
+        if (env_cfg.k8s_namespace) |ns| alloc.free(ns);
     }
 
-    const config_path = env_cfg.config_path orelse "config-gw.json";
+    const config_path = env_cfg.config_path orelse blk: {
+        if (env_cfg.k8s_namespace) |ns| {
+            break :blk try std.fmt.allocPrint(alloc, "config-{s}.json", .{ns});
+        }
+        break :blk "config-gw.json";
+    };
 
     var app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
         cfg.validate() catch |err| {
