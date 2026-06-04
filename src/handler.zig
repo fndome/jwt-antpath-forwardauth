@@ -48,12 +48,11 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
 
     const req_end = std.mem.indexOf(u8, content, "\r\n") orelse std.mem.indexOfScalar(u8, content, '\n') orelse content.len;
-    app.log(.err, "auth req={s}\n", .{content[0..@min(req_end, @as(usize, 200))]});
+    app.log(.err, "auth req={s}\n", .{content[0..@min(req_end, @as(usize, 150))]});
     app.log(.err, "auth path={s}\n", .{path});
-    if (extractHeader(content, "X-Forwarded-Uri")) |v| app.log(.err, "auth hdr uri={s}\n", .{v});
-    if (extractHeader(content, "X-Forwarded-Prefix")) |v| app.log(.err, "auth hdr prefix={s}\n", .{v});
-    if (extractHeader(content, "X-Real-Uri")) |v| app.log(.err, "auth hdr realuri={s}\n", .{v});
-    if (extractHeader(content, "Referer")) |v| app.log(.err, "auth hdr referer={s}\n", .{v});
+    if (extractHeader(content, "X-Forwarded-Uri")) |v| app.log(.err, "auth uri={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
+    if (extractHeader(content, "X-Forwarded-Prefix")) |v| app.log(.err, "auth prefix={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
+    if (extractHeader(content, "Referer")) |v| app.log(.err, "auth ref={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
 
     if (matchesAny(path, srv_ctx.bl_rules)) {
         srv_ctx.stats.blocked += 1;
