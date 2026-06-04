@@ -37,22 +37,20 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
         return true;
     }
 
-    const path = app.getPathFromRequest(content) orelse {
+    const req_path = app.getPathFromRequest(content) orelse {
         srv_ctx.stats.total += 1;
         srv_ctx.stats.blocked += 1;
         try c.text(400, "Bad Request");
         return true;
     };
 
+    const path = if (extractHeader(content, "X-Forwarded-Uri")) |uri|
+        app.getPathFromRequest(uri) orelse req_path
+    else
+        req_path;
+
     srv_ctx.stats.total += 1;
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
-
-    const req_end = std.mem.indexOf(u8, content, "\r\n") orelse std.mem.indexOfScalar(u8, content, '\n') orelse content.len;
-    app.log(.err, "auth req={s}\n", .{content[0..@min(req_end, @as(usize, 150))]});
-    app.log(.err, "auth path={s}\n", .{path});
-    if (extractHeader(content, "X-Forwarded-Uri")) |v| app.log(.err, "auth uri={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
-    if (extractHeader(content, "X-Forwarded-Prefix")) |v| app.log(.err, "auth prefix={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
-    if (extractHeader(content, "Referer")) |v| app.log(.err, "auth ref={s}\n", .{v[0..@min(v.len, @as(usize, 100))]});
 
     if (matchesAny(path, srv_ctx.bl_rules)) {
         srv_ctx.stats.blocked += 1;
