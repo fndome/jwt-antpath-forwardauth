@@ -62,9 +62,9 @@ pub fn main(init: std.process.Init) !void {
 
     const config_path = env_cfg.config_path orelse blk: {
         if (env_cfg.k8s_namespace) |ns| {
-            break :blk try std.fmt.allocPrint(alloc, "config-{s}.json", .{ns});
+            break :blk try std.fmt.allocPrint(alloc, "config/config-{s}.json", .{ns});
         }
-        break :blk "config-gw.json";
+        break :blk "config/config-gw.json";
     };
 
     var app_cfg = if (app.loadConfigFromFile(alloc, config_path)) |cfg| blk: {
