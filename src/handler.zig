@@ -44,10 +44,10 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
         return true;
     };
 
-    const path = if (extractHeader(content, "X-Forwarded-Uri")) |uri|
-        app.getPathFromRequest(uri) orelse req_path
-    else
-        req_path;
+    const path = if (extractHeader(content, "X-Forwarded-Uri")) |uri| blk: {
+        const q = std.mem.indexOfScalar(u8, uri, '?') orelse uri.len;
+        break :blk uri[0..q];
+    } else req_path;
 
     srv_ctx.stats.total += 1;
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
