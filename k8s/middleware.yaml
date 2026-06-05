@@ -15,11 +15,6 @@ spec:
     authRequestHeaders:
       - "Authorization"
       - "X-Forwarded-Uri"
-    authResponseHeaders:
-      - "X-User-Id"
-      - "X-User-Types"
-      - "X-Guild-Id"
-      - "X-Is-Guild-Mgr"
 ---
 # ============================================================
 # Gateway API HTTPRoute — 通过 filter 引用 Middleware

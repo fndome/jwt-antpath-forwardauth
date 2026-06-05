@@ -118,24 +118,13 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.stats.allowed += 1;
     srv_ctx.metrics.incCounter("jwt_allowed_total", null) catch {};
 
-    const claims_headers = buildClaimsHeaders(srv_ctx.allocator, payload) catch |err| {
-        app.log(.err, "buildClaimsHeaders error: {s}\n", .{@errorName(err)});
-        srv_ctx.stats.errors += 1;
-        try c.text(500, "Internal Server Error");
-        return true;
-    };
-    defer srv_ctx.allocator.free(claims_headers);
-
-    if (c.headers == null) c.headers = std.ArrayList(u8).empty;
-
     if (rl_result) |rl_res| {
         const limit_line = try std.fmt.allocPrint(srv_ctx.allocator, "X-RateLimit-Limit: {d}\r\nX-RateLimit-Remaining: {d}\r\n", .{ rl_res.limit, rl_res.remaining });
         defer srv_ctx.allocator.free(limit_line);
+        if (c.headers == null) c.headers = std.ArrayList(u8).empty;
         try c.headers.?.appendSlice(srv_ctx.allocator, limit_line);
     }
-    try c.headers.?.appendSlice(srv_ctx.allocator, claims_headers);
 
-    // 不设 body → 框架自动返回 200 OK + headers
     return true;
 }
 
