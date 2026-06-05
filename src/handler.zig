@@ -52,6 +52,8 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.stats.total += 1;
     srv_ctx.metrics.incCounter("jwt_requests_total", null) catch {};
 
+    app.log(.err, "auth p={s}\n", .{path});
+
     if (matchesAny(path, srv_ctx.bl_rules)) {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
@@ -62,6 +64,7 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     if (matchesAny(path, srv_ctx.wl_rules)) {
         srv_ctx.stats.allowed += 1;
         srv_ctx.metrics.incCounter("jwt_whitelisted_total", null) catch {};
+        app.log(.err, "auth wl={s}\n", .{path});
         return true;
     }
 
@@ -88,6 +91,7 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
         } else if (std.mem.eql(u8, res.error_msg, "Token expired")) {
             srv_ctx.metrics.incCounter("jwt_expired_tokens_total", null) catch {};
         }
+        app.log(.err, "auth 401 jwt={s} path={s}\n", .{res.error_msg, path});
         const status: u16 = if (std.mem.eql(u8, res.error_msg, "JWT data incomplete")) 400 else 401;
         try c.text(status, res.error_msg);
         return true;
@@ -117,6 +121,8 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
 
     srv_ctx.stats.allowed += 1;
     srv_ctx.metrics.incCounter("jwt_allowed_total", null) catch {};
+
+    app.log(.err, "auth ok path={s}\n", .{path});
 
     const claims_headers = buildClaimsHeaders(srv_ctx.allocator, payload) catch |err| {
         app.log(.err, "buildClaimsHeaders error: {s}\n", .{@errorName(err)});
