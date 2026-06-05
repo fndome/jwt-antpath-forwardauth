@@ -49,7 +49,12 @@ data:
       ]
     }
 ---
-# Traefik Middleware — 引用此鉴权服务
+# ============================================================
+# Traefik Middleware — forwardAuth 鉴权
+#
+# 注意: 必须包含 X-Forwarded-Uri，因为 Traefik Gateway API 模式下
+# forwardAuth 请求行固定为 GET /，原始路径通过此 header 传递
+# ============================================================
 apiVersion: traefik.io/v1alpha1
 kind: Middleware
 metadata:
@@ -60,10 +65,57 @@ spec:
     address: "http://jwt-antpath-forwardauth-svc.gw.svc.cluster.local:80"
     authRequestHeaders:
       - "Authorization"
-      - "X-Forwarded-For"
-      - "X-Forwarded-Proto"
+      - "X-Forwarded-Uri"
     authResponseHeaders:
       - "X-User-Id"
       - "X-User-Types"
       - "X-Guild-Id"
       - "X-Is-Guild-Mgr"
+---
+# ============================================================
+# Gateway API HTTPRoute 使用示例 (filter 引用此 Middleware)
+# ============================================================
+# apiVersion: gateway.networking.k8s.io/v1
+# kind: HTTPRoute
+# metadata:
+#   name: example-route
+#   namespace: test
+# spec:
+#   parentRefs:
+#     - name: traefik-gateway
+#       namespace: gw
+#   hostnames:
+#     - "api.example.com"
+#   rules:
+#     - matches:
+#         - path:
+#             type: PathPrefix
+#             value: /v1/example
+#       filters:
+#         - type: ExtensionRef
+#           extensionRef:
+#             group: traefik.io
+#             kind: Middleware
+#             name: jwt-antpath
+#       backendRefs:
+#         - name: example-svc
+#           port: 80
+# ---
+# ============================================================
+# IngressRoute 使用示例 (原生 forwardAuth, 路径会正确传递)
+# ============================================================
+# apiVersion: traefik.io/v1alpha1
+# kind: IngressRoute
+# metadata:
+#   name: example-ingressroute
+#   namespace: test
+# spec:
+#   entryPoints:
+#     - websecure
+#   routes:
+#     - match: Host(`api.example.com`) && PathPrefix(`/v1/example`)
+#       middlewares:
+#         - name: jwt-antpath
+#       services:
+#         - name: example-svc
+#           port: 80
