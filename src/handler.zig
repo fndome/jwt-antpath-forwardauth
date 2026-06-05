@@ -118,12 +118,22 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     srv_ctx.stats.allowed += 1;
     srv_ctx.metrics.incCounter("jwt_allowed_total", null) catch {};
 
+    const claims_headers = buildClaimsHeaders(srv_ctx.allocator, payload) catch |err| {
+        app.log(.err, "buildClaimsHeaders error: {s}\n", .{@errorName(err)});
+        srv_ctx.stats.errors += 1;
+        try c.text(500, "Internal Server Error");
+        return true;
+    };
+    defer srv_ctx.allocator.free(claims_headers);
+
+    if (c.headers == null) c.headers = std.ArrayList(u8).empty;
+
     if (rl_result) |rl_res| {
         const limit_line = try std.fmt.allocPrint(srv_ctx.allocator, "X-RateLimit-Limit: {d}\r\nX-RateLimit-Remaining: {d}\r\n", .{ rl_res.limit, rl_res.remaining });
         defer srv_ctx.allocator.free(limit_line);
-        if (c.headers == null) c.headers = std.ArrayList(u8).empty;
         try c.headers.?.appendSlice(srv_ctx.allocator, limit_line);
     }
+    try c.headers.?.appendSlice(srv_ctx.allocator, claims_headers);
 
     return true;
 }
@@ -170,6 +180,62 @@ fn extractHeader(buf: []const u8, key: []const u8) ?[]const u8 {
         }
     }
     return null;
+}
+
+fn buildClaimsHeaders(allocator: Allocator, payload: *const jwt.Payload) ![]const u8 {
+    var list = std.ArrayList(u8).empty;
+    errdefer list.deinit(allocator);
+    const json = payload.parsed.value;
+    if (json != .object) return try list.toOwnedSlice(allocator);
+    const obj = json.object;
+    var it = obj.iterator();
+    while (it.next()) |entry| {
+        const key = entry.key_ptr.*;
+        const value = entry.value_ptr.*;
+        if (!isValidHeaderName(key)) continue;
+        const header_value = switch (value) {
+            .string => |s| sanitizeHeaderValue(allocator, s) catch continue,
+            .integer => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+            .float => |n| try std.fmt.allocPrint(allocator, "{d}", .{n}),
+            .number_string => |ns| try allocator.dupe(u8, ns),
+            .bool => |b| if (b) "true" else "false",
+            .null => continue,
+            .array => |arr| if (arr.items.len > 0 and arr.items[0] == .string)
+                sanitizeHeaderValue(allocator, arr.items[0].string) catch continue
+            else
+                continue,
+            .object => continue,
+        };
+        defer {
+            if (value == .integer or value == .float or value == .string or value == .number_string)
+                allocator.free(@constCast(header_value));
+        }
+        try list.appendSlice(allocator, key);
+        try list.appendSlice(allocator, ": ");
+        try list.appendSlice(allocator, header_value);
+        try list.appendSlice(allocator, "\r\n");
+    }
+    return try list.toOwnedSlice(allocator);
+}
+
+fn isValidHeaderName(s: []const u8) bool {
+    if (s.len == 0) return false;
+    for (s) |c| {
+        if (c == '\r' or c == '\n' or c == ':') return false;
+    }
+    return true;
+}
+
+fn sanitizeHeaderValue(allocator: Allocator, s: []const u8) ![]const u8 {
+    var buf = try allocator.alloc(u8, s.len);
+    var j: usize = 0;
+    for (s) |c| {
+        if (c != '\r' and c != '\n') {
+            buf[j] = c;
+            j += 1;
+        }
+    }
+    return buf[0..j];
 }
 
 fn matchesAny(path: []const u8, rules: []const PathRule) bool {
