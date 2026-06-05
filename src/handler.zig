@@ -8,6 +8,8 @@ const app = @import("app.zig");
 const ratelimiter = @import("sliding_window_rate_limiter.zig");
 const metrics = @import("prometheus_metrics.zig");
 
+const ERR_SFX = " <- jwt-antpath-forwardauth";
+
 // ==========================================
 // 业务上下文 JwtContext
 // ==========================================
@@ -33,14 +35,14 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     if (content.len > app.MAX_HEADER_LENGTH) {
         srv_ctx.stats.total += 1;
         srv_ctx.stats.blocked += 1;
-        try c.text(431, "Request Header Fields Too Large");
+        try c.text(431, "Request Header Fields Too Large" ++ ERR_SFX);
         return true;
     }
 
     const req_path = app.getPathFromRequest(content) orelse {
         srv_ctx.stats.total += 1;
         srv_ctx.stats.blocked += 1;
-        try c.text(400, "Bad Request");
+        try c.text(400, "Bad Request" ++ ERR_SFX);
         return true;
     };
 
@@ -57,7 +59,7 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     if (matchesAny(path, srv_ctx.bl_rules)) {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
-        try c.text(403, "Forbidden");
+        try c.text(403, "Forbidden" ++ ERR_SFX);
         return true;
     }
 
@@ -72,13 +74,13 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
         app.log(.err, "auth 401 no-token path={s}\n", .{path});
-        try c.text(401, "Unauthorized");
+        try c.text(401, "Unauthorized" ++ ERR_SFX);
         return true;
     };
     if (token.len == 0) {
         srv_ctx.stats.blocked += 1;
         srv_ctx.metrics.incCounter("jwt_blocked_total", null) catch {};
-        try c.text(400, "Empty Token");
+        try c.text(400, "Empty Token" ++ ERR_SFX);
         return true;
     }
 
@@ -93,12 +95,14 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
         }
         app.log(.err, "auth 401 jwt={s} path={s}\n", .{res.error_msg, path});
         const status: u16 = if (std.mem.eql(u8, res.error_msg, "JWT data incomplete")) 400 else 401;
-        try c.text(status, res.error_msg);
+        var buf: [128]u8 = undefined;
+        const msg = std.fmt.bufPrint(&buf, "{s}" ++ ERR_SFX, .{res.error_msg}) catch "jwt error" ++ ERR_SFX;
+        try c.text(status, msg);
         return true;
     }
     const payload = res.payload orelse {
         srv_ctx.stats.blocked += 1;
-        try c.text(500, "Internal Server Error");
+        try c.text(500, "Internal Server Error" ++ ERR_SFX);
         return true;
     };
     defer {
@@ -127,7 +131,7 @@ pub fn verifyMiddleware(allocator: Allocator, c: *Context) anyerror!bool {
     const claims_headers = buildClaimsHeaders(srv_ctx.allocator, payload) catch |err| {
         app.log(.err, "buildClaimsHeaders error: {s}\n", .{@errorName(err)});
         srv_ctx.stats.errors += 1;
-        try c.text(500, "Internal Server Error");
+        try c.text(500, "Internal Server Error" ++ ERR_SFX);
         return true;
     };
     defer srv_ctx.allocator.free(claims_headers);
