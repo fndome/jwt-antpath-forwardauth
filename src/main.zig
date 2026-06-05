@@ -97,6 +97,10 @@ pub fn main(init: std.process.Init) !void {
         };
         break :blk default_cfg;
     };
+    if (env_cfg.secret_key) |sk| {
+        alloc.free(@constCast(app_cfg.secret_key));
+        app_cfg.secret_key = try alloc.dupe(u8, sk);
+    }
     defer app_cfg.deinit(alloc);
     app.global_log_level = app_cfg.log_level;
     try startServer(alloc, app_cfg, &stats, async_logger);
