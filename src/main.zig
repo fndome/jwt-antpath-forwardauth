@@ -171,15 +171,17 @@ fn startServer(alloc: Allocator, cfg: app.AppConfig, stats: *app.Stats, async_lo
     };
 
     // 创建异步服务器，传递上下文
-    var server = try sws.AsyncServer.init(alloc, app.global_io, cfg.listen_addr, &ctx, 64, null, .{
+    var server = try sws.AsyncServer.init(alloc, app.global_io, .{
+        .listen_addr = cfg.listen_addr,
+        .app_ctx = &ctx,
         .max_connections = 10_000,
         .buffer_pool_size = 4096,
         .large_pool_capacity = cfg.large_pool_capacity,
+        .max_path_length = @intCast(app.MAX_PATH_LENGTH),
+        .io_cpu = cfg.io_cpu,
     });
     defer server.deinit();
 
-    server.config(.max_path_length, app.MAX_PATH_LENGTH);
-    if (cfg.io_cpu) |cpu| server.config(.io_cpu, cpu);
     try router.registerRoutes(&server);
 
     // 运行服务器
